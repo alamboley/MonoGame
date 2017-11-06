@@ -2,17 +2,16 @@
 // This file is subject to the terms and conditions defined in
 // file 'LICENSE.txt', which is part of this source code package.
 
-using Android;
-using Android.Content.PM;
 using System;
 using System.IO;
-using System.IO.Compression;
+
+using Google.Android.Vending.Expansion.ZipFile;
 
 namespace Microsoft.Xna.Framework
 {
     partial class TitleContainer
     {
-        private static ZipArchive _expansionFile = null;
+        static ZipResourceFile expansionFiles;
 
         private static Stream PlatformOpenStream(string safeName)
         {
@@ -22,78 +21,10 @@ namespace Microsoft.Xna.Framework
             }
             catch (Exception)
             {
-                // File not found, checking if an APK expansion contains it
-
-                bool accessError = false;
-
-                // Init .obb file
-                if (_expansionFile == null)
-                {
-                    ApplicationInfo ainfo = Game.Activity.ApplicationInfo;
-                    PackageInfo pinfo = Game.Activity.PackageManager.GetPackageInfo(ainfo.PackageName, PackageInfoFlags.MetaData);
-
-                    // Ihis is all the possible locations where the system may store .obb files for the application.
-                    // If it's empty, it most probably means that .obb files haven't been downloaded correctly and needs to be downloaded manually by the app
-                    // For reference: https://developer.android.com/google/play/expansion-files.html
-                    Java.IO.File[] dirs = Game.Activity.GetObbDirs();
-
-                    if (dirs != null && dirs.Length > 0)
-                    {
-                        // We need to check all locations for a mounted .obb
-                        for (int i = 0; i < dirs.Length; i++)
-                        {
-                            if (dirs[i] != null)
-                            {
-                                string pathToObb = Path.Combine(
-                                    dirs[i].AbsolutePath,
-                                    String.Format("main.{0}.{1}.obb", pinfo.VersionCode, ainfo.PackageName));
-
-                                // To know if we found an .obb file, we have to try to open it
-                                // File.Exists() may return false even if the file exists but the system didn't give read permissions on external storage
-                                try
-                                {
-                                    _expansionFile = ZipFile.OpenRead(pathToObb);
-                                    break; // Everything's fine, we found the .obb
-                                }
-                                catch (FileNotFoundException)
-                                {
-                                    // The .obb doesn't exist in this location
-                                    _expansionFile = null;
-                                }
-                                catch (Exception)
-                                {
-                                    // Couldn't open the .obb
-                                    _expansionFile = null;
-                                    accessError = true;
-                                }                                                                    
-                            }
-                        }
-                    }                    
-                }
-
-                // No .obb file
-                if (_expansionFile == null)
-                {
-                    if (accessError)
-                    {
-                        // If we can't open it, it's most probably because of this Android bug:
-                        // https://issuetracker.google.com/issues/37544273
-                        // The only known workaround is to re-download the .obb manually within the app
-                        // For reference: https://developer.android.com/google/play/expansion-files.html
-                        throw new UnauthorizedAccessException("External storage read permission is required to open file " + safeName);
-                    }
-                    throw new FileNotFoundException("Can't find file " + safeName);
-                }
-
-                ZipArchiveEntry entry = _expansionFile.GetEntry(safeName);
-
-                // Couldn't find the asset within the .obb file
-                if (entry == null)
-                {
-                    throw new FileNotFoundException("Can't find file " + safeName);
-                }
-
-                return entry.Open();                
+                if (expansionFiles == null)
+                    expansionFiles = APKExpansionSupport.GetAPKExpansionZipFile(Game.Activity.ApplicationContext, Game.Activity.ApplicationContext.PackageManager.GetPackageInfo(Game.Activity.ApplicationContext.PackageName, 0).VersionCode, 0);
+                
+                return expansionFiles.GetInputStream(safeName);
             }
         }
     }
